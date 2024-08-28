@@ -1,0 +1,69 @@
+---
+title: "multistate"
+author: "Tianyi Zong"
+date: "2024-07-18"
+output: html_document
+---
+
+```{r}
+#install.packages("msm")
+library(msm)
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r}
+# Load your data
+load("Patient.RData")
+patient <- read.csv("patients.csv")
+```
+
+
+```{r}
+final_data_patient <- final_data %>%
+  left_join(patient %>% select(subject_id, gender, anchor_age), by = 'subject_id')
+final_data_patient$state <- factor(final_data$hypertension_control, levels = c("controlled", "not controlled", "dead"), labels = c(1, 2, 3))
+final_data_patient<- final_data_patient %>%
+  group_by(subject_id) %>%
+  filter(n() > 1)
+
+Q<-rbind(c(1,1,1), c(1,1,1),c(0,0,0))
+Q<-rbind(c(0.25,0.25,0.25), c(0.166,0.166,0.166), c(0,0,0))
+Q.crude <- crudeinits.msm(state ~ days_of_measurement, subject_id, data=final_data_patient, qmatrix=Q)
+Q.crude
+# Fit the multi-state Markov model with appropriate initial values
+msm_model <- msm(
+  state ~ days_of_measurement,
+  subject = subject_id,
+  data = final_data_patient,
+  covariates = ~ anchor_age,
+  qmatrix = Q,
+  method = "BFGS")
+
+
+# Summarize the model
+msm_model
+
+
+#summary(msm_model)
+
+statetable.msm(state, subject_id, data=final_data)
+crudeinits.msm(state~days_of_measurement, subject_id, data=final_data, qmatrix = Q)
+```
+
+```{r}
+msm_model <- msm(
+  state ~ days_of_measurement,
+  subject = subject_id,
+  data = final_data_patient,
+  covariates = ~ gender,
+  qmatrix = Q.crude,
+  method = "BFGS", control = list(fnscale = 10000, maxit = 10000))
+
+msm_model
+
+summary(msm_model)
+```
+
+
