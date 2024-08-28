@@ -1,0 +1,218 @@
+---
+title: "data"
+author: "menglu zhao"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+load("capstone.RData")
+```
+
+```{r}
+setwd('/Users/lulu/Desktop/capstone/hypertension')
+library(dplyr) 
+library(tidyr)
+```
+
+```{r}
+# Read hosp data files using read.csv
+# d_hcpcs <- read.csv("hosp/d_hcpcs.csv")                    
+# d_icd_diagnoses <- read.csv("hosp/d_icd_diagnoses.csv")    
+# d_icd_procedures <- read.csv("hosp/d_icd_procedures.csv")  
+# d_labitems <- read.csv("hosp/d_labitems.csv")              
+# diagnoses_icd <- read.csv("hosp/diagnoses_icd.csv")       
+# drgcodes <- read.csv("hosp/drgcodes.csv")                  
+# emar <- read.csv("hosp/emar.csv")                          
+# emar_detail <- read.csv("hosp/emar_detail.csv")            
+# hcpcsevents <- read.csv("hosp/hcpcsevents.csv")          
+# labevents <- read.csv("hosp/labevents.csv")               
+# microbiologyevents <- read.csv("hosp/microbiologyevents.csv")  
+# pharmacy <- read.csv("hosp/pharmacy.csv")                 
+# poe <- read.csv("hosp/poe.csv")                            
+# poe_detail <- read.csv("hosp/poe_detail.csv")              
+# prescriptions <- read.csv("hosp/prescriptions.csv")       
+# procedures_icd <- read.csv("hosp/procedures_icd.csv")      
+# provider <- read.csv("hosp/provider.csv")                 
+# services <- read.csv("hosp/services.csv")                  
+# transfers <- read.csv("hosp/transfers.csv")                
+
+# Read icu data files using read.csv
+# caregiver <- read.csv("icu/caregiver.csv")                 
+# chartevents <- read.csv("icu/chartevents.csv")            
+# d_items <- read.csv("icu/d_items.csv")                    
+# datetimeevents <- read.csv("icu/datetimeevents.csv")       
+# icustays <- read.csv("icu/icustays.csv")                   
+# ingredientevents <- read.csv("icu/ingredientevents.csv")   
+# inputevents <- read.csv("icu/inputevents.csv")             
+# outputevents <- read.csv("icu/outputevents.csv")           
+# procedureevents <- read.csv("icu/procedureevents.csv")     
+
+```
+
+```{r}
+setwd('/Users/lulu/Desktop/capstone/hypertension')
+library(dplyr) 
+library(tidyr)
+# patient information
+admissions <- read.csv("admissions.csv") 
+patients <- read.csv("patients.csv")
+
+patients_info <- admissions %>%
+  left_join(patients, by = "subject_id") %>%
+  mutate(is_dead = if_else(dod != "", "dead", "alive"))
+
+diagnoses_icd <- read.csv("diagnoses_icd.csv")
+hypertension_icd_codes <- c("401", "402", "403", "404", "405", "416", 
+                            "I10", "I11", "I110", "I119", "I12", "I120", "I129", "I13", "I130", "I131", 
+                            "I1310", "I1311", "I132", "I15", "I150", "I151", "I152", "I158", "I159", 
+                            "I16", "I160", "I161", "I169", "I270", "I272", "I2720", "I2721", "I2722", 
+                            "I2723", "I2724", "I2729")
+
+# Construct a regex pattern to capture any codes starting with the specified codes
+pattern <- paste0("^(", paste(hypertension_icd_codes, collapse = "|"), ")")
+hypertension_diagnoses <- diagnoses_icd %>%
+  filter(grepl(pattern, icd_code))
+
+# Merge the filtered hypertension diagnoses with the admissions table
+filtered_patients_info <- patients_info %>%
+  inner_join(diagnoses_icd, by = c("subject_id", "hadm_id")) %>%
+  filter( subject_id %in% hypertension_diagnoses$subject_id) %>%
+  select(- c(seq_num, icd_code, icd_version)) %>%
+  distinct()
+
+filtered_patients_info <- head(filtered_patients_info,500)
+
+# hypertension controll
+omr <- read.csv("omr.csv") 
+
+# Filter omr for Blood Pressure records and keep only those with subject_id in hypertension_diagnoses
+bp_records <- omr %>%
+  filter(result_name == "Blood Pressure" & subject_id %in% hypertension_diagnoses$subject_id) %>%
+  separate(col = result_value, into = c("SBP", "DBP"), sep = "/", convert = TRUE) %>%
+  mutate(SBP = as.numeric(SBP),
+         DBP = as.numeric(DBP),
+         hypertension_control = if_else(SBP < 140 & DBP < 90, "controlled", "not controlled"))
+
+bp_records <- bp_records %>%
+  select(-c(seq_num, result_name))
+
+bp_records <- bp_records %>%
+  arrange(subject_id, chartdate) %>%
+  group_by(subject_id) %>%
+  mutate(chartdate = as.Date(chartdate),
+         days_in_between = as.numeric(difftime(chartdate, lag(chartdate, default = first(chartdate)), units = "days")),
+         days_of_measurement = cumsum(days_in_between))
+```
+
+```{r}
+# hypertension controll
+omr <- read.csv("omr.csv") 
+
+
+# Filter omr for Blood Pressure records and keep only those with subject_id in hypertension_diagnoses
+bp_records <- omr %>%
+  filter(result_name == "Blood Pressure" & subject_id %in% hypertension_diagnoses$subject_id) %>%
+  separate(col = result_value, into = c("SBP", "DBP"), sep = "/", convert = TRUE) %>%
+  mutate(SBP = as.numeric(SBP),
+         DBP = as.numeric(DBP),
+         hypertension_control = if_else(SBP < 140 & DBP < 90, "controlled", "not controlled"))
+
+bp_records <- bp_records %>%
+  select(-c(seq_num, result_name))
+
+bp_records <- bp_records %>%
+  arrange(subject_id, chartdate) %>%
+  group_by(subject_id) %>%
+  mutate(chartdate = as.Date(chartdate),
+         days_in_between = as.numeric(difftime(chartdate, lag(chartdate, default = first(chartdate)), units = "days")),
+         days_of_measurement = cumsum(days_in_between))
+```
+
+
+```{r}
+filtered_patients <- patients[patients$subject_id %in% bp_records$subject_id & !is.na(patients$dod), ]
+
+bp_records_filtered <- bp_records %>%
+  select(subject_id, chartdate, hypertension_control, days_of_measurement)
+
+# Create a new dataframe from filtered_patients, keep the subject_id and dod columns, and rename the dod to chartdate
+filtered_patients_modified <- filtered_patients %>%
+  select(subject_id, chartdate = dod) %>%
+  mutate(hypertension_control = "dead", days_of_measurement = NA)
+
+
+filtered_patients_modified$chartdate<- as.Date(filtered_patients_modified$chartdate)
+# merge
+final_data <- bind_rows(bp_records_filtered, filtered_patients_modified)
+
+# Calculate the difference in days between the chartdate of each row under each subject_id and the smallest chartdate of that subject_id
+final_data <- final_data %>%
+  group_by(subject_id) %>%
+  mutate(min_chartdate = min(chartdate, na.rm = TRUE),
+         days_of_measurement = as.numeric(difftime(chartdate, min_chartdate, units = "days"))) %>%
+  ungroup() %>%
+  select(subject_id, chartdate, hypertension_control, days_of_measurement)
+
+final_data <- final_data %>%
+  arrange(subject_id, chartdate) %>%
+  distinct()
+
+final_data <- na.omit(final_data)
+
+# delete rows that has same subject_id and chartdate
+final_data <- final_data %>%
+  group_by(subject_id, chartdate) %>%
+  filter(row_number() == 1)
+
+check_and_filter <- function(data) {
+  data <- data %>%
+    group_by(subject_id) %>%
+    arrange(subject_id, days_of_measurement) %>%
+    mutate(is_dead_last = if_else(hypertension_control == "dead" & row_number() == n(), TRUE, FALSE),
+           has_dead = any(hypertension_control == "dead")) %>%
+    ungroup()
+  
+  subject_ids_to_remove <- data %>%
+    group_by(subject_id) %>%
+    summarize(dead_last = any(is_dead_last), has_dead = first(has_dead)) %>%
+    filter(!dead_last & has_dead) %>%
+    pull(subject_id)
+  
+  data <- data %>%
+    filter(!subject_id %in% subject_ids_to_remove) %>%
+    select(-is_dead_last, -has_dead)
+  
+  return(data)
+}
+
+
+final_data <- check_and_filter(final_data)
+```
+
+```{r}
+
+d_icd_diagnoses <- read.csv("d_icd_diagnoses.csv")    
+diagnoses_icd <- read.csv("diagnoses_icd.csv")       
+admissions <- read.csv("admissions.csv") 
+icd_procedures <- read.csv("d_icd_procedures.csv")
+
+
+# Merge datasets
+admissions_diagnoses <- merge(admissions, diagnoses_icd, by = c("subject_id", "hadm_id"))
+complete_data <- merge(admissions_diagnoses, d_icd_diagnoses, by = c("icd_code", "icd_version"))
+
+# Filter for hypertension-related admissions
+hypertension_data <- complete_data[grepl("^401|^402|^403|^404|^405", complete_data$icd_code), ]
+
+```
+
+```{r}
+save(filtered_patients_info, bp_records, final_data, hypertension_data, file = "Patient.RData")
+```
+
